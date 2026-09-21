@@ -1,0 +1,117 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: colegio-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-0000}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-colegio_db}
+      TZ: America/Santiago
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-0000}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - colegio-network
+
+  auth-service:
+    build:
+      context: ./Backend-colegio/auth-servise
+    container_name: colegio-auth
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-colegio_db}?useSSL=false&serverTimezone=America/Santiago&allowPublicKeyRetrieval=true
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-0000}
+    ports:
+      - "8081:8081"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - colegio-network
+
+  ms-notas:
+    build:
+      context: ./Backend-colegio/ms-notas
+    container_name: colegio-notas
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-colegio_db}?useSSL=false&serverTimezone=America/Santiago&allowPublicKeyRetrieval=true
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-0000}
+    ports:
+      - "8082:8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - colegio-network
+
+  ms-asistencia:
+    build:
+      context: ./Backend-colegio/ms-asistencia
+    container_name: colegio-asistencia
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-colegio_db}?useSSL=false&serverTimezone=America/Santiago&allowPublicKeyRetrieval=true
+      DB_USERNAME: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-0000}
+    ports:
+      - "8083:8083"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - colegio-network
+
+  bff-colegio:
+    build:
+      context: ./Backend-colegio/bff-colegio
+    container_name: colegio-bff
+    restart: unless-stopped
+    environment:
+      NOTAS_SERVICE_URL: http://ms-notas:8082/api/notas
+      ASISTENCIA_SERVICE_URL: http://ms-asistencia:8083/api/asistencias
+      AUTH_SERVICE_URL: http://auth-service:8081/api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - auth-service
+      - ms-notas
+      - ms-asistencia
+    networks:
+      - colegio-network
+
+  frontend:
+    build:
+      context: ./Frontend-colegio
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    container_name: colegio-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - bff-colegio
+    networks:
+      - colegio-network
+
+volumes:
+  mysql_data:
+    name: colegio_mysql_data
+
+networks:
+  colegio-network:
+    name: colegio-network
+    driver: bridge
+
+
+
+#http://localhost:5173
